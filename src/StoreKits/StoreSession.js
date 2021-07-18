@@ -1,5 +1,6 @@
 /* todo: 
 sessionStorage 存储封装 
+使用 Symbol 避免key重复 
 */
 
 
