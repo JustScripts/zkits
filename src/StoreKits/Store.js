@@ -1,122 +1,148 @@
-/* todo: 
-本地存储封装,状态集中管理 
+/* 存储封装,状态集中管理 
 特点: 
-  可跨页面 缓存数据, 使用后, 便于清除 
+  可跨页面 缓存数据, 
 */
 
+const instances_key = Symbol('instances');
+const callbacks_key_flg = Symbol('callbacks_key');
 
-const store_instance_map = {
+// 
+const store_instances = {
   // <store_key>: instance,
 }
-const callbacks_key_flg = Symbol('callbacks_key');
 export default class Store {
   constructor(store_key, initValue=null, trimFn ){ 
     trimFn = trimFn || function(val){ return val; };
-    this.key = store_key;
+    this._key = store_key;
     // 初始值 
-    this.initValue = initValue;
+    this._initValue = initValue;
     // 格式化函数 
-    this.trim = trimFn;
-    this.value = initValue;
+    this._trim = trimFn;
+    
+    this._value = this._initValue;
     // 缓存格式化的值 
-    this._trimedValue = null;
+    this._trimedValue = this._trim(this._value);
+    this._preValue = null; 
+    this._preTrimedValue = this._trim(this._preValue); 
   }
   
   /* --------------------------------------------------------- APIs */
-  // 初始定义 
-  static define(store_key, initValue, trimFn){
-    // 禁止重复定义 
-    if ( store_instance_map[store_key] ) {
-      let errMsg = `#fd store key has defined`;
-      console.error(errMsg, store_key);
-      throw errMsg;
-    }
-    
-    // 定义store
-    let storeInstance = new this(store_key, initValue, trimFn);
-    store_instance_map[store_key] = storeInstance;
-    return storeInstance;
-  }
-  // (初始)使用 
+  // 使用 
   static use(store_key, initValue, trimFn){
-    let store = store_instance_map[store_key];
-    if ( !store ) {
-      // 未定义时,禁止直接使用 
-      if (initValue===undefined) {
-        let errMsg = `#fd store key is not define`;
-        console.error(errMsg, store_key);
-        throw errMsg;
-      }
-      
-      // 未定义时,可初始定义 
-      return this.define(store_key, initValue, trimFn);
-    }
+    // 必须指定key 
+    if (!store_key) { throw new Error('store key is not define'); }
     
-    return store;
+    // 已定义,则直接使用
+    let instance = this[instances_key][store_key];
+    if ( instance ) { return instance; }
+    
+    // 未定义时,初始定义后使用 
+    instance = new this(store_key, initValue, trimFn);
+    this[instances_key][store_key] = instance;
+    return instance;
   }
-  /* --------------------------------------------------------- APIs */
+  // 取值 
   get = (isTrimed=true, isClear=false)=>{
-    let result = this.value; 
-    if ( !isTrimed ) { 
-      if ( isClear ) { this.clear() }
-      return result; 
-    }
-    
-    let trimedResult = this._trimedValue;
-    if (trimedResult!==null) { 
+    if ( isTrimed ) {
+      let trimedResult = this._trimedValue;
       if ( isClear ) { this.clear() }
       return trimedResult; 
     }
     
-    trimedResult = this.trim( this.value );
-    this._trimedValue = trimedResult;
+    let result = this._value; 
     if ( isClear ) { this.clear() }
-    return trimedResult; 
+    return result; 
   }
+  // 写值 
   set = (val)=>{
-    let preV = this.get();
-    this.value = val; 
-    this._trimedValue = null; 
-    this[callbacks_key_flg].forEach((listenRun,idx)=>{
-      listenRun(val, preV);
+    // 重复设置相同值,不处理 
+    if ( val===this._value ) { return ; }
+    
+    this._preValue = this._value;
+    this._preTrimedValue = this._trimedValue;
+    this._value = val; 
+    this._trimedValue = this._trim( val ); 
+    this[callbacks_key_flg].forEach((listenRun, idx)=>{
+      listenRun(
+        this._value, 
+        this._preValue, 
+        this._trimedValue, 
+        this._preTrimedValue
+      );
     })
   }
-  clear = ()=>{ this.set( this.initValue ); }
-  [callbacks_key_flg] = [];
-  listen = (listenRun)=>{
-    this[callbacks_key_flg].push( listenRun )
+  // 清除 
+  clear = ()=>{ this.set( this._initValue ); }
+  // 监听 
+  listen = (listenRun, immediate=false)=>{
+    if ( typeof listenRun!=='function' ) {
+      throw new Error('first argument is not a function');
+    }
+    
+    this[callbacks_key_flg].push( listenRun );
+    if ( immediate ) {
+      listenRun(
+        this._value, 
+        this._preValue, 
+        this._trimedValue, 
+        this._preTrimedValue
+      );
+    }
   }
+  
+  
+  /* --------------------------------------------------------- DATAs */
+  // 实例集合 
+  static [instances_key] = store_instances;
+  // 监听函数集 
+  [callbacks_key_flg] = [];
 }
-export class MapStore extends Store {
+
+// 
+const store_map_instances = {
+  // 
+}
+export class StoreMap extends Store {
   constructor(store_key, initValue={}, trimFn){
     super(store_key, initValue, trimFn);
   }
   
+  /* --------------------------------------------------------- APIs */
   key = (k, v)=>{
     this.set({
-      ...this.get(false),
+      ...this.get(false, false),
       [k]: v, 
     })
   }
+  
+  /* --------------------------------------------------------- DATAs */
+  // 实例集合 
+  static [instances_key] = store_map_instances;
 }
+
+
+
+
+
+
 /** -------------------------------------------------------------- test */
 export function test(){
   let key01 = Symbol('key1');
-  let store = Store.define(key01, {});
-  store = Store.use(key01, {});
-  store.listen((val, pre)=>{ 
-    console.log( val, pre);
-  }); 
-  store.get();
-  store.set('111');
-  // store.clear();
   
-  let key02 = Symbol('key2');
-  let ms = MapStore.use(key02, {})
-  ms.listen((val, pre)=>{ 
+  const st = Store.use(key01, 'init');
+  st.get();
+  st.set('111');
+  st.listen((val, pre, valTrimed, preTrimed)=>{ 
     console.log( val, pre);
-  }); 
+  }, true); 
+  // st.clear();
+  
+  const ms = StoreMap.use(key01)
+  ms.listen((val, pre, valTrimed, preTrimed)=>{ 
+    console.log( val, pre);
+  }, true); 
   ms.key('a', 1)
+  // ms.clear();
   
 } 
 

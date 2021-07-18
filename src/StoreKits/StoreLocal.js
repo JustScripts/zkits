@@ -1,5 +1,6 @@
 /* todo: 
 localStorage 存储封装 
+提示已定义过的缓存 做一个key的存储 
 */
 
 
