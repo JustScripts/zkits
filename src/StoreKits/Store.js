@@ -12,12 +12,11 @@ const store_instances = {
 }
 export default class Store {
   constructor(store_key, initValue=null, trimFn ){ 
-    trimFn = trimFn || function(val){ return val; };
     this._key = store_key;
     // 初始值 
     this._initValue = initValue;
     // 格式化函数 
-    this._trim = trimFn;
+    this._trim = trimFn || function(val){ return val; };
     
     this._value = this._initValue;
     // 缓存格式化的值 
