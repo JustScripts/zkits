@@ -1,172 +1,193 @@
-/* todo: 
-localStorage 存储封装 
-提示已定义过的缓存 做一个key的存储 
+/* localStorage 存储封装 
+人为避免重复定义 
+  实例统一入口文件定义 
+  使用 '/' 符号, 定义命名空间 
+过期控制 
+  num  num秒后失效,方案: 始终储存为一对象值, 通过一个键值来定义有效时间 
+  <=0  永久有效 
 */
 
 
-import {
-  isMapValue, 
-} from "../../utils/judge.js";
-
-const session_local_store_key = '#fd_store';
-const keys_map = {
-  // <store_key>: instance,
-}
-export default class Store {
-  constructor(store_key, options={}){ 
-    this.key = store_key;
-    this.options = options;
-    let {
-      // '01'-内存,'02'-sessionStorage, '03'-localStorage [todo]
-      cacheType = '01', 
-      // 初始值 
-      initValue = null, 
-      // 格式化函数 
-      trim = function(val){ return val; },
-      // 初始是否清除之前的缓存,针对 sessionStorage 和 localStorage  
-      initClear = false, 
-      // 超时时间,单位:s , 针对 localStorage 
-      timeout = 24 * 60 * 60,
-    } = options || {};
-    this.cacheType = cacheType;
-    this.initValue = initValue;
-    this.initClear = initClear;
-    this.timeout = timeout;
-    this.trim = trim;
-    this.value = initValue;
+const name_space = 'ztl';
+const callbacks_key_flg = Symbol('callbacks_key');
+export default class StoreLocal {
+  constructor(store_key, initValue=null, timeout=0, trimFn){ 
+    this._key = `${name_space}/${store_key}`;
+    // 初始值 
+    this._initValue = initValue;
+    // 格式化函数 
+    this._trim = trimFn || function(val){ return val; };
+    
+    timeout = Number(timeout);
+    this._timeout = timeout ? timeout : 0;
+    
+    this._value = JSON.parse( localStorage.getItem(this._key) );
+    if ( this._value===null ) {
+      this._value = {
+        start: Date.now(),
+        timeout: this._timeout, 
+        isOutTime: false, // 是否已超时 
+        v: this._initValue,
+      };
+      localStorage.setItem(this._key, JSON.stringify( this._value ));
+      
+      this._preValue = null; 
+      this._preTrimedValue = this._trim(this._preValue);
+    }
+    else {
+      this._value.timeout = this._timeout;
+      this._preValue = this._value.v; 
+      this._preTrimedValue = this._trim(this._preValue);
+    }
     // 缓存格式化的值 
-    this._trimedValue = null;
+    this._trimedValue = this._trim(this._value.v);
   }
   
   /* --------------------------------------------------------- APIs */
-  static define(store_key, options){
-    if ( keys_map[store_key] ) {
-      let errMsg = `#fd store key has defined ${store_key}`;
-      console.error(errMsg);
-      throw errMsg;
+  // 使用 
+  static use(store_key, initValue, timeout, trimFn){
+    // 必须指定key 
+    if (!store_key) { throw new Error('store key is not define'); }
+
+    let instance = new this(store_key, initValue, timeout, trimFn);
+    return instance;
+  }
+  // 取值 
+  get value(){ return this.get(); }
+  get = (isTrimed=true, handleFlg )=>{
+    this.checkIsTimeout();
+    
+    // 是否单次有效: 单次有效即,本窗口存在,关闭后清除 
+    if ( handleFlg==='once' ) {
+      let result = JSON.parse( sessionStorage.getItem( this._key ) );
+      if (result===null) {
+        result = this._value.v; 
+        sessionStorage.setItem(this._key, JSON.stringify(result));
+        this.clear(); 
+      }
+      if (isTrimed) { return this._trim(result); }
+      return result;
     }
     
-    let storeInstance = new Store(store_key, options);
-    if (storeInstance._isSession) {
-      // storeInstance._setSessionStorage(storeInstance.initValue);
-      // storeInstance._setSessionStorage(storeInstance._getSessionStorage);
-      storeInstance.set(storeInstance._getSessionStorage, true, false);
-    }
-    keys_map[store_key] = storeInstance;
-    return storeInstance;
-  }
-  static use(store_key){
-    let store = keys_map[store_key];
-    if ( !store ) {
-      let errMsg = `#fd store key is not define: ${store_key}`;
-      console.error(errMsg);
-      throw errMsg;
+    let isClear = handleFlg==='clear';
+    if ( isTrimed ) {
+      let trimedResult = this._trimedValue;
+      if ( isClear ) { this.clear() }
+      return trimedResult; 
     }
     
-    return store;
+    let result = this._value.v; 
+    if ( isClear ) { this.clear() }
+    return result; 
   }
-  
-  
+  // 写值 
+  set value(val){ return this.set(val); }
+  set = (val, isRefresh=true)=>{
+    // 重复设置相同值,不处理 
+    try {
+      if ( JSON.stringify(val)===JSON.stringify(this._value.v) ) { return ; }
+    } 
+    catch (err) { return console.warn(err); } 
+    
+    this.checkIsTimeout();
+
+    this._preValue = this._value.v;
+    this._preTrimedValue = this._trimedValue;
+    this._value = {
+      ...this._value, 
+      v: val,
+    }; 
+    if ( isRefresh ) { 
+      this._value.start = Date.now();
+      this._value.isOutTime = false; 
+    }
+    this._trimedValue = this._trim( val ); 
+    localStorage.setItem( this._key, JSON.stringify(this._value) );
+    this[callbacks_key_flg].forEach((listenRun, idx)=>{
+      listenRun(
+        this._value.v, 
+        this._preValue, 
+        this._trimedValue, 
+        this._preTrimedValue
+      );
+    })
+  }
+  // 清除 
+  clear = ()=>{ this.set( this._initValue, false ); }
+  // 监听 
+  listen = (listenRun, immediate=false)=>{
+    if ( typeof listenRun!=='function' ) {
+      throw new Error('first argument is not a function');
+    }
+
+    this[callbacks_key_flg].push( listenRun )
+    if ( immediate ) {
+      this.checkIsTimeout();
+      listenRun(
+        this._value.v, 
+        this._preValue, 
+        this._trimedValue, 
+        this._preTrimedValue
+      );
+    }
+  }
+
+  /* --------------------------------------------------------- DATAs */
+  [callbacks_key_flg] = [];
   /* --------------------------------------------------------- KITs */
-  static _initEnv(){
-    if ( !sessionStorage[session_local_store_key] ) {
-      sessionStorage[session_local_store_key] = JSON.stringify({});
-    }
-    else {
-      try {
-        if ( !isMapValue(JSON.parse(sessionStorage[session_local_store_key])) ) {
-          sessionStorage[session_local_store_key] = JSON.stringify({});
-        }
-      } 
-      catch (err) { 
-        console.error(err);
-        sessionStorage[session_local_store_key] = JSON.stringify({});
-      } 
-    }
+  // 检查是否在有效期内 
+  checkIsTimeout = ()=>{ 
+    if ( this._value.isOutTime ) { false; }
+    if ( this._value.timeout===0 ) { return true; }
+    let outTime = this._value.start + this._timeout*1000;
+    if ( outTime - Date.now() > 0 ) { return true; }
     
-    if ( !localStorage[session_local_store_key] ) {
-      localStorage[session_local_store_key] = JSON.stringify({});
+    this.clear();
+    this._value.isOutTime = true; 
+    return false;
+  }
+}
+export class LocalMap extends StoreLocal {
+  constructor(store_key, initValue={}, timeout, trimFn){
+    if ( typeof initValue!=='object' ) {
+      throw new Error('initValue is not a map value');
     }
-    else {
-      try {
-        if ( !isMapValue(JSON.parse(localStorage[session_local_store_key])) ) {
-          localStorage[session_local_store_key] = JSON.stringify({});
-        }
-      } 
-      catch (err) { 
-        console.error(err);
-        localStorage[session_local_store_key] = JSON.stringify({});
-      } 
-    }
+    super(store_key, initValue, timeout, trimFn);
   }
-  get _isMemory(){ return this.cacheType==='01'; }
-  get _isSession(){ return this.cacheType==='02'; }
-  get _isLocal(){ return this.cacheType==='03'; }
-  _getSessionStorage(){ 
-    let obj = JSON.parse( sessionStorage[session_local_store_key] );
-    return obj[this.key];
-  }
-  _setSessionStorage(val){ 
-    let obj = JSON.parse( sessionStorage[session_local_store_key] );
-    obj[this.key] = val; 
-    sessionStorage[session_local_store_key] = JSON.stringify(obj);
-  }
-  _clearSessionStorage(){ }
-  _setLocalStorage(){ }
-  _getLocalStorage(){ }
-  _clearLocalStorage(){ }
+  
   /* --------------------------------------------------------- APIs */
-  get = ()=>{
-    if (this._trimedValue!==null) { return this._trimedValue; }
-    
-    this._trimedValue = this.trim( this.value );
-    return this._trimedValue; 
-  }
-  set = (val, isSilent=false, isSync=true )=>{
-    let preV = this.get();
-    this.value = val; 
-    this._trimedValue = null; 
-    if (!isSilent) {
-      this._listenCallbacks.forEach((listenRun,idx)=>{
-        listenRun(val, preV);
-      })
-    }
-    if (isSync) {
-      if (this._isSession) { this._setSessionStorage(val); }
-      if (this._isLocal) { this._setLocalStorage(val); }
-    }
-  }
-  clear = ()=>{ 
-    this.set( this.initValue ); 
-    this._clearSessionStorage();
-    this._clearLocalStorage();
-  }
-  _listenCallbacks = [];
-  listen = (listenRun)=>{
-    this._listenCallbacks.push( listenRun )
-  }
-}
-Store._initEnv();
-export class StoreSession {
-  constructor(arg){ 
-  }
-}
-export class StoreLocal {
-  constructor(arg){ 
+  key = (k, v)=>{
+    this.set({
+      ...this.get(false),
+      [k]: v, 
+    })
   }
 }
 
-/* ** -------------------------------------------------------
-  const st = Store.define('key_001', { });
 
-  const store = Store.use('key_001');
-  store.get();
-  store.set();
-  store.clear();
-  store.listen((val, pre)=>{ }); 
-*/
-
-
+/* ** ------------------------------------------------------- test */
+const st = StoreLocal.use('a/key_001', '01', 60);
+const ms = LocalMap.use('a/key_002')
+export function test(){
+  // st.get();
+  // st.set('aaa');
+  // st.listen((val, pre, vt, pt)=>{ 
+  //   console.log( val, pre, vt, pt );
+  // }, true); 
+  // st.clear();
+  
+  // ms.set({});
+  ms.key('a', 111);
+} 
+export function test1(){
+  // st.listen((val, pre, vt, pt)=>{ 
+  //   console.log( val, pre, vt, pt );
+  // }); 
+  // st.set('bbb');
+  // st.clear();
+  
+  console.log( ms.get() );
+} 
 
 
 
