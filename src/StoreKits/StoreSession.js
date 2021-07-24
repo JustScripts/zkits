@@ -8,16 +8,16 @@ Feature:
 const name_space = 'zk';
 const callbacks_key_flg = Symbol('callbacks_key');
 export default class StoreSession {
-  constructor(store_key, initValue=null, trimFn){ 
+  constructor(store_key, dftVal=null, trimFn){ 
     this._key = `${name_space}/${store_key}`;
     // 初始值 
-    this._initValue = initValue;
+    this._dftVal = dftVal;
     // 格式化函数 
     this._trim = trimFn || function(v){ return v; };
     
     this._value = JSON.parse( sessionStorage.getItem(this._key) );
     if ( this._value===null ) {
-      this._value = this._initValue;
+      this._value = this._dftVal;
       sessionStorage.setItem(this._key, JSON.stringify( this._value ));
       
       this._preValue = null; 
@@ -33,11 +33,11 @@ export default class StoreSession {
   
   /* --------------------------------------------------------- APIs */
   // 使用 
-  static use(store_key, initValue, trimFn){
+  static use(store_key, dftVal, trimFn){
     // 必须指定key 
     if (!store_key) { throw new Error('store key is not define'); }
 
-    let instance = new this(store_key, initValue, trimFn);
+    let instance = new this(store_key, dftVal, trimFn);
     return instance;
   }
   // 取值 
@@ -80,7 +80,7 @@ export default class StoreSession {
     })
   }
   // 清除 
-  clear = ()=>{ this.set( this._initValue ); }
+  clear = ()=>{ this.set( this._dftVal ); }
   // 监听 
   listen = (listenRun, immediate=false)=>{
     if ( typeof listenRun!=='function' ) {
@@ -102,11 +102,11 @@ export default class StoreSession {
   [callbacks_key_flg] = [];
 }
 export class SessionMap extends StoreSession {
-  constructor(store_key, initValue={}, trimFn){
-    if ( typeof initValue!=='object' ) {
-      throw new Error('initValue is not a map value');
+  constructor(store_key, dftVal={}, trimFn){
+    if ( typeof dftVal!=='object' ) {
+      throw new Error('dftVal is not a map value');
     }
-    super(store_key, initValue, trimFn);
+    super(store_key, dftVal, trimFn);
   }
   
   /* --------------------------------------------------------- APIs */
@@ -115,6 +115,10 @@ export class SessionMap extends StoreSession {
       ...this.get(false, false),
       [k]: v, 
     })
+  }
+  isEmpty = ()=>{
+    let objMap = this.get(true);
+    return Object.keys(objMap).length===0
   }
 }
 

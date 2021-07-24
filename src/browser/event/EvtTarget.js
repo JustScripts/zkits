@@ -86,7 +86,7 @@ export default ZK_Event;
 
 
 
-/* 测试 */
+/* ------------------------------------------------------------- 测试 */
 export function test(){
   
   let myET = new ZK_Event();

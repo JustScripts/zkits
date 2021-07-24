@@ -11,14 +11,14 @@ const store_instances = {
   // <store_key>: instance,
 }
 export default class Store {
-  constructor(store_key, initValue=null, trimFn ){ 
+  constructor(store_key, dftVal=null, trimFn ){ 
     this._key = store_key;
     // 初始值 
-    this._initValue = initValue;
+    this._dftVal = dftVal;
     // 格式化函数 
     this._trim = trimFn || function(val){ return val; };
     
-    this._value = this._initValue;
+    this._value = this._dftVal;
     // 缓存格式化的值 
     this._trimedValue = this._trim(this._value);
     this._preValue = null; 
@@ -27,7 +27,7 @@ export default class Store {
   
   /* --------------------------------------------------------- APIs */
   // 使用 
-  static use(store_key, initValue, trimFn){
+  static use(store_key, dftVal, trimFn){
     // 必须指定key 
     if (!store_key) { throw new Error('store key is not define'); }
     
@@ -36,7 +36,7 @@ export default class Store {
     if ( instance ) { return instance; }
     
     // 未定义时,初始定义后使用 
-    instance = new this(store_key, initValue, trimFn);
+    instance = new this(store_key, dftVal, trimFn);
     this[instances_key][store_key] = instance;
     return instance;
   }
@@ -71,7 +71,7 @@ export default class Store {
     })
   }
   // 清除 
-  clear = ()=>{ this.set( this._initValue ); }
+  clear = ()=>{ this.set( this._dftVal ); }
   // 监听 
   listen = (listenRun, immediate=false)=>{
     if ( typeof listenRun!=='function' ) {
@@ -102,8 +102,8 @@ const store_map_instances = {
   // 
 }
 export class StoreMap extends Store {
-  constructor(store_key, initValue={}, trimFn){
-    super(store_key, initValue, trimFn);
+  constructor(store_key, dftVal={}, trimFn){
+    super(store_key, dftVal, trimFn);
   }
   
   /* --------------------------------------------------------- APIs */
@@ -112,6 +112,10 @@ export class StoreMap extends Store {
       ...this.get(false, false),
       [k]: v, 
     })
+  }
+  isEmpty = ()=>{
+    let objMap = this.get(true);
+    return Object.keys(objMap).length===0
   }
   
   /* --------------------------------------------------------- DATAs */
@@ -128,7 +132,7 @@ export class StoreMap extends Store {
 export function test(){
   let key01 = Symbol('key1');
   
-  const st = Store.use(key01, 'init');
+  const st = Store.use(key01, 'dft01');
   st.get();
   st.set('111');
   st.listen((val, pre, valTrimed, preTrimed)=>{ 

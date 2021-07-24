@@ -11,10 +11,10 @@
 const name_space = 'ztl';
 const callbacks_key_flg = Symbol('callbacks_key');
 export default class StoreLocal {
-  constructor(store_key, initValue=null, timeout=0, trimFn){ 
+  constructor(store_key, dftVal=null, timeout=0, trimFn){ 
     this._key = `${name_space}/${store_key}`;
     // 初始值 
-    this._initValue = initValue;
+    this._dftVal = dftVal;
     // 格式化函数 
     this._trim = trimFn || function(val){ return val; };
     
@@ -27,7 +27,7 @@ export default class StoreLocal {
         start: Date.now(),
         timeout: this._timeout, 
         isOutTime: false, // 是否已超时 
-        v: this._initValue,
+        v: this._dftVal,
       };
       localStorage.setItem(this._key, JSON.stringify( this._value ));
       
@@ -45,11 +45,11 @@ export default class StoreLocal {
   
   /* --------------------------------------------------------- APIs */
   // 使用 
-  static use(store_key, initValue, timeout, trimFn){
+  static use(store_key, dftVal, timeout, trimFn){
     // 必须指定key 
     if (!store_key) { throw new Error('store key is not define'); }
 
-    let instance = new this(store_key, initValue, timeout, trimFn);
+    let instance = new this(store_key, dftVal, timeout, trimFn);
     return instance;
   }
   // 取值 
@@ -113,7 +113,7 @@ export default class StoreLocal {
     })
   }
   // 清除 
-  clear = ()=>{ this.set( this._initValue, false ); }
+  clear = ()=>{ this.set( this._dftVal, false ); }
   // 监听 
   listen = (listenRun, immediate=false)=>{
     if ( typeof listenRun!=='function' ) {
@@ -148,11 +148,11 @@ export default class StoreLocal {
   }
 }
 export class LocalMap extends StoreLocal {
-  constructor(store_key, initValue={}, timeout, trimFn){
-    if ( typeof initValue!=='object' ) {
-      throw new Error('initValue is not a map value');
+  constructor(store_key, dftVal={}, timeout, trimFn){
+    if ( typeof dftVal!=='object' ) {
+      throw new Error('dftVal is not a map value');
     }
-    super(store_key, initValue, timeout, trimFn);
+    super(store_key, dftVal, timeout, trimFn);
   }
   
   /* --------------------------------------------------------- APIs */
@@ -161,6 +161,10 @@ export class LocalMap extends StoreLocal {
       ...this.get(false),
       [k]: v, 
     })
+  }
+  isEmpty = ()=>{
+    let objMap = this.get(true);
+    return Object.keys(objMap).length===0
   }
 }
 
